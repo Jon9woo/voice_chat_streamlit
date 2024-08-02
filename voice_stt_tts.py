@@ -10,6 +10,9 @@ from dotenv import load_dotenv
 # 시간 정보를 얻기 위한 패키지 추가
 from datetime import datetime
 
+# 음원 파일 재생을 위한 패키지 추가
+import base64
+
 # 환경변수 로드
 load_dotenv()
 
@@ -20,9 +23,9 @@ from audiorecorder import audiorecorder
 # Open AI API 키 설정하기
 api_key = os.environ.get('OPEN_API_KEY')
 
-client = OpenAI(
-    api_key = api_key
-)
+system_content = "You are a thoughtful assistant. Respond to all input in 25 words and answer in korean."
+
+client = OpenAI(api_key = api_key)
 
 ### 기능 구현 함수 ###
 def STT(speech):
@@ -43,8 +46,37 @@ def STT(speech):
     return transcription.text
 
 
+def askGPT(prompt, model):
+    response = client.chat.completions.create(
+        model=model,
+        messages=prompt
+    )
+    return response.choices[0].message.content
+
+def TTS(text):
+    filename = "output.mp3"
+    response = client.audio.speech.create(
+        model = "tts-1",
+        voice = "alloy",
+        input = text
+    )
+    response.stream_to_file(filename)
+
+    # 음원 파일 자동 재생
+    with open(filename, "rb") as f:
+        data = f.read()
+        b64 = base64.b64encode(data).decode()
+        md = f"""
+            <audio autoplay="True">
+            <source src = "data:audio/mp3;base64,{b64}" type="audio/mp3">
+            </audio>
+            """
+        st.markdown(md, unsafe_allow_html=True)
 
 
+
+
+### 메인 함수 ###
 def main():
 
     st.set_page_config(page_title="음성 챗봇", page_icon="🎙️", layout="wide")
@@ -68,7 +100,7 @@ def main():
         
         st.markdown("")
 
-    system_content = "You are a thoughtful assistant. Respond to all input in 25 words and answer in korean."
+    system_content = "You are a thoughtful assistant. Respond to all input in 25 words and answer in korea"
 
     # session state 초기화
     if "chat" not in st.session_state:
@@ -119,6 +151,31 @@ def main():
     with (col2):
         # 오른쪽 영역 작성
         st.subheader("질문/답변")
+
+        if (audio.duration_seconds > 0) and (st.session_state["check_reset"]==False):
+            # chatgpt에게 답변 얻기
+            response = askGPT(st.session_state.messages, model)
+
+            # 채팅을 시각화하기 위해 답변 내용 저장
+            now = datetime.now().strftime("%H:%M")
+            st.session_state.chat = st.session_state.chat + [("bot", now, response)]
+
+            # 채팅 형식으로 시각화하기
+            for sender, time, message in st.session_state["chat"]:
+                if sender == 'user':
+                    st.write(f'<div style="display:flex;align-items:center;"><div style="background-color:#007AFF;color:white;border-radius:12px;padding:8px 12px;margin-right:8px;">{message}</div><div style="font-size:0.8rem;color:gray;">{time}</div></div>', 
+                             unsafe_allow_html=True)
+                    st.write("")
+                else:
+                    st.write(f'<div style="display:flex;align-items:center;justify-content:flex-end;"><div style="background-color:lightgray;border-radius:12px;padding:8px 12px;margin-left:8px;">{message}</div><div style="font-size:0.8rem;color:gray;">{time}</div></div>', 
+                             unsafe_allow_html=True)
+                    st.write("")
+
+            # 답변 내용을 시스템 메시지에 추가
+            TTS(response)
+        
+        else:
+            st.session_state["check_reset"] = False
 
 # 실행 함수
 if __name__ == "__main__":
